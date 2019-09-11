@@ -24,12 +24,12 @@ public class UnsafeCollections {
      * ArrayList出现的结果：
      * 1.19996
      * 2.Exception in thread "Thread-0" java.lang.ArrayIndexOutOfBoundsException: 15
-     * 	at java.util.ArrayList.add(ArrayList.java:459)
-     * 	at me.akoala.abc.concurrency.unsafecollections.AddToList.run(UnsafeCollections.java:58)
-     * 	at java.lang.Thread.run(Thread.java:748)
+     * at java.util.ArrayList.add(ArrayList.java:459)
+     * at me.akoala.abc.concurrency.unsafecollections.AddToList.run(UnsafeCollections.java:58)
+     * at java.lang.Thread.run(Thread.java:748)
      * 10008
      * <br/>
-     *
+     * <p>
      * Vector 出现的结果
      * 20000
      **/
