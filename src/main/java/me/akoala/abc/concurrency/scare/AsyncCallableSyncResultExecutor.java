@@ -42,21 +42,20 @@ public class AsyncCallableSyncResultExecutor {
     /**
      * 任务
      */
-    private Map<String, Callable> callableMap;
     private ThreadLocal<Map<String, Callable>> callableMapThreadLocal;
 
     /**
      * Future 结果
      */
-    private Map<String, Future> futureMap;
+    private ThreadLocal<Map<String, Future>> futureMapThreadLocal;
 
     /**
      * 结果
      */
-    private Map<String, Object> resultMap;
+    private ThreadLocal<Map<String, Object>> resultMapThreadLocal;
 
     // 倒数器
-    private CountDownLatch latch;
+    private ThreadLocal<CountDownLatch> latchThreadLocal;
 
     public AsyncCallableSyncResultExecutor() {
         init();
@@ -68,12 +67,42 @@ public class AsyncCallableSyncResultExecutor {
     }
 
     private void init() {
-        this.callableMap = new HashMap<>();
-        this.futureMap = new HashMap<>();
-        this.resultMap = new HashMap<>();
         threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(poolCoreSize);
+        this.callableMapThreadLocal = new ThreadLocal<>();
+        this.futureMapThreadLocal = new ThreadLocal<>();
+        this.resultMapThreadLocal = new ThreadLocal<>();
+        this.latchThreadLocal = new ThreadLocal<>();
     }
 
+
+    private Map<String, Callable> getCallableMap() {
+        if (this.callableMapThreadLocal.get() == null) {
+            this.callableMapThreadLocal.set(new HashMap<>());
+        }
+        return this.callableMapThreadLocal.get();
+    }
+
+    private Map<String, Future> getFutureMap() {
+        if (this.futureMapThreadLocal.get() == null) {
+            this.futureMapThreadLocal.set(new HashMap<>());
+        }
+        return this.futureMapThreadLocal.get();
+    }
+
+    private Map<String, Object> getResultMap() {
+        if (this.resultMapThreadLocal.get() == null) {
+            this.resultMapThreadLocal.set(new HashMap<>());
+        }
+        return this.resultMapThreadLocal.get();
+    }
+
+    private CountDownLatch getLatch() {
+        return this.latchThreadLocal.get();
+    }
+
+    private void setLatch(int size) {
+        this.latchThreadLocal.set(new CountDownLatch(size));
+    }
 
     /**
      * 添加任务
@@ -83,7 +112,7 @@ public class AsyncCallableSyncResultExecutor {
      * @return
      */
     public boolean addCallable(String taskId, Callable callable) {
-        return this.callableMap.put(taskId, callable) != null;
+        return this.getCallableMap().put(taskId, callable) != null;
     }
 
     /**
@@ -96,14 +125,19 @@ public class AsyncCallableSyncResultExecutor {
      */
     public Map<String, Object> exec(long timeout, TimeUnit unit) throws InterruptedException {
 
-        latch = new CountDownLatch(this.callableMap.size());
+        setLatch(this.callableMapThreadLocal.get().size());
+
         submitTask();
 
-        latch.await(timeout, unit);
+        getLatch().await(timeout, unit);
 
         collectResult();
 
-        return this.resultMap;
+        Map<String, Object> result = this.resultMapThreadLocal.get();
+
+        clean();
+
+        return result;
 
     }
 
@@ -115,27 +149,32 @@ public class AsyncCallableSyncResultExecutor {
      */
     public Map<String, Object> exec() throws InterruptedException {
 
-        latch = new CountDownLatch(this.callableMap.size());
+        setLatch(this.callableMapThreadLocal.get().size());
 
         submitTask();
 
-        latch.await();
+        getLatch().await();
 
         collectResult();
 
-        return this.resultMap;
+        Map<String, Object> result = this.resultMapThreadLocal.get();
+
+        clean();
+
+        return result;
 
     }
+
 
     /**
      * 提交任务，并执行，保存Future
      */
     private void submitTask() {
-        for (String key : callableMap.keySet()) {
-            Callable callable = callableMap.get(key);
-            Callable c = retry ? new AsyncRetryCallable(callable, latch, retryTime) : new AsyncCallable(callable, latch);
+        for (String key : getCallableMap().keySet()) {
+            Callable callable = getCallableMap().get(key);
+            Callable c = retry ? new AsyncRetryCallable(callable, getLatch(), retryTime) : new AsyncCallable(callable, getLatch());
             Future future = threadPoolExecutor.submit(c);
-            futureMap.put(key, future);
+            getFutureMap().put(key, future);
         }
     }
 
@@ -146,12 +185,12 @@ public class AsyncCallableSyncResultExecutor {
      * @throws InterruptedException
      */
     private void collectResult() throws InterruptedException {
-        for (String key : futureMap.keySet()) {
+        for (String key : getFutureMap().keySet()) {
             try {
-                this.resultMap.put(key, futureMap.get(key).get());
+                this.getResultMap().put(key, this.getFutureMap().get(key).get());
             } catch (ExecutionException e) {
                 log.error(e.getMessage(), e);
-                this.resultMap.put(key, null);
+                this.getResultMap().put(key, null);
             }
         }
     }
@@ -162,11 +201,13 @@ public class AsyncCallableSyncResultExecutor {
 
     public void clean() {
 
-        if (isRunning()) {
-            throw new RuntimeException("pool exists task , please clean force.");
-        }
+        log.info("clean threadLocal.");
 
-        this.callableMap.clear();
+        this.callableMapThreadLocal.remove();
+        this.futureMapThreadLocal.remove();
+        this.resultMapThreadLocal.remove();
+        this.latchThreadLocal.remove();
 
     }
+
 }
